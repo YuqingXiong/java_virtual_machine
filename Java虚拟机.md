@@ -521,6 +521,76 @@ System.gc();
 
 所以还是用Unsafe对象手动的调用 freeMemory 进行回收比较好
 
+# 2 垃圾回收
+
+## 2.1 判断一个对象是否可回收
+
+### 2.1.1 引用计数法
+
+如果一个对象被另一个对象引用，那么它的引用计数加一，如果那个对象不再引用它了，那么引用计数减一。当引用计数为 0 时，该对象就应该被垃圾回收了。
+
+但是下面这种互相引用的情况就无法回收了：
+
+两个对象的计数都为1，导致两个对象都无法被释放	
+
+![image-20231222213023143](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312222130211.png)
+
+### 2.1.2 可达性分析算法
+
+垃圾回收之前，扫描所有对象，判断每个对象是否被根对象引用，如果没有被根对象引用，那么在以后垃圾回收时就将那些没有与根相连的对象回收
+
+- Java 虚拟机中的垃圾回收器采用可达性分析来探索所有存活的对象
+- 扫描堆中的对象，看是否能够沿着 GC Root对象 为起点的引用链找到该对象，找不到，表示可以回收
+- 哪些对象可以作为 GC Root ?
+
+**查找可以作为GCRoot的对象：**
+
+运行下面程序：
+
+```java
+public static void main(String[] args) throws IOException {
+
+        ArrayList<Object> list = new ArrayList<>();
+        list.add("a");
+        list.add("b");
+        list.add(1);
+        System.out.println(1);
+        System.in.read();
+
+        list = null;
+        System.out.println(2);
+        System.in.read();
+        System.out.println("end");
+    }
+
+
+```
+
+使用 ` jmap -dump:format=b,live,file=1.bin 进程id` 将堆内存中的信息存储到文件1.bin中
+
+使用Eclipse Memory Analyzer 打开1.bin文件，选择 GC Root 选项进行分析：
+
+![image-20231222214435898](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312222144954.png)
+
+可以看出 GC Root 分为四类：
+
+- System Class ：系统类，启动类加载器加载的类，例如Object，HashMap等核心类
+- Native Stack：Java 有时候需要调用系统中的一些方法
+- Busy Monitor ：被加锁的对象也需要被保留
+- Thread：活动线程的栈帧内中使用的对象
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
