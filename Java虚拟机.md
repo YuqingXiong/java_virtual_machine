@@ -579,6 +579,240 @@ public static void main(String[] args) throws IOException {
 - Busy Monitor ：被加锁的对象也需要被保留
 - Thread：活动线程的栈帧内中使用的对象
 
+### 2.1.3 五种引用
+
+1. 强引用
+
+   只有所有 GC Roots 对象都不通过【强引用】引用该对象，该对象才能被垃圾回收
+
+例如：C对象和B对象强引用了 A1 对象，只有 C 对象和 B 对象都不强引用了 A1 对象，A1 对象才可以被垃圾回收
+
+![image-20231223165023644](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312231650858.png)
+
+2. 软引用（SoftReference）
+   - **仅有软引用引用该对象时**，**在垃圾回收后，内存仍不足时会再次触发垃圾回收**，回收软引用对象
+   - 可以配合引用队列来释放软引用自身
+3. 弱引用（WeakReference）
+   - 仅有弱引用引用该对象时，在垃圾回收时，**无论内存是否充足**，都会回收弱引用对象
+   - 可以配合引用队列来释放弱引用自身
+
+![image-20231223165530366](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312231655487.png)
+
+4. 虚引用（PhantomReference）
+  - 必须配合引用队列使用，主要配合 ByteBuffer 使用，被引用对象回收时，会将虚引用入队，由 Reference Handler 线程调用虚引用相关方法释放直接内存
+
+Cleaner 对象虚引用 ByteBuffer 对象
+
+![image-20231223165915900](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312231659027.png)
+
+当ByteBuffer 对象被回收后，其分配的直接内存还没有被回收。
+
+这时Cleaner对象会被放入引用队列：
+
+![image-20231223170045348](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312231700488.png)
+
+虚引用所在的队列会由一个ReferenceHandler的线程来定时的在队列中寻找是否有新入队的 Cleaner ，如果有就会调用 Cleaner 对象中的 clean 方法。而 clean 方法就会根据前面记录的直接内存的地址，用 Unsafe.freeMemory 方法释放直接内存：
+
+![image-20231223170306689](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312231703042.png)
+
+5. 终结器引用（FinalReference）
+
+- 无需手动编码，但其内部配合引用队列使用，在垃圾回收时，终结器引用入队（被引用对象
+  暂时没有被回收），再由 Finalizer 线程通过终结器引用找到被引用对象并调用它的 finalize方法，第二次 GC 时才能回收被引用对象
+
+所有对象都继承自Object类，其中有一个 finalize 方法
+
+如果 finalize 方法被重写了，也就是被对象实现了。jvm 就会将终结器引用对象放入引用队列。就会有一个FinalizeHandler的线程对队列进行检查。找到了终结器引用，就会根据它找到该对象，调用 finalize 方法。调用完后，第二次垃圾回收才可以把该对象回收掉
+
+![image-20231223170935669](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312231709975.png)
+
+### 2.1.4 软引用的示例
+
+内存不足时，会回收软引用对象，可用于对象缓存
+
+可以用 SoftReference 对象保证要软引用的对象：
+
+首先限制内存大小的 vm option ：`-Xmx20m`
+
+```java
+public class d1_SoftReference {
+    public static void main(String[] args) {
+        // list -> SoftReference -> byte[]
+        List<SoftReference<byte[]>> list = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            SoftReference<byte[]> reference = new SoftReference<>(new byte[1024 * 1024 * 4]);
+            System.out.println(reference.get());
+            list.add(reference);
+            System.out.println(list.size());
+        }
+        System.out.println("循环结束" + list.size());
+        for (SoftReference<byte[]> reference : list) {
+            System.out.println(reference.get());
+        }
+    }
+}
+```
+
+输出：可以看出由于内存空间不足，前三个ref都被回收掉了
+
+```java
+[B@10f87f48
+1
+[B@b4c966a
+2
+[B@2f4d3709
+3
+[B@4e50df2e
+4
+[B@1d81eb93
+5
+循环结束5
+null
+null
+null
+[B@4e50df2e
+[B@1d81eb93
+```
+
+软引用，引用的对象为 null，那么软引用本身也就没有必要保留了。这里可以用软引用队列来对软引用对象本身进行回收
+
+```java
+public class d1_SoftReference {
+    public static void main(String[] args) {
+        List<SoftReference<byte[]>> list = new ArrayList<>();
+        // 引用队列
+        ReferenceQueue<byte[]> queue = new ReferenceQueue<>();
+
+        for (int i = 0; i < 5; i++) {
+            // 这里关联了软引用队列，当 byte[]被回收时，软引用本身会被加入到 queue中
+            SoftReference<byte[]> reference = new SoftReference<>(new byte[1024 * 1024 * 4], queue);
+            System.out.println(reference.get());
+            list.add(reference);
+            System.out.println(list.size());
+        }
+        // 清除掉没有内容的软引用本身：
+        Reference<? extends byte[]> poll = queue.poll();
+        while (poll != null){
+            list.remove(poll);
+            poll = queue.poll();
+        }
+        System.out.println("循环结束" + list.size());
+        for (SoftReference<byte[]> reference : list) {
+            System.out.println(reference.get());
+        }
+    }
+}
+```
+
+输出：这里的list中只有2个byte数组了
+
+```java
+[B@10f87f48
+1
+[B@b4c966a
+2
+[B@2f4d3709
+3
+[B@4e50df2e
+4
+[B@1d81eb93
+5
+循环结束2
+[B@4e50df2e
+[B@1d81eb93
+```
+
+### 2.1.5  弱引用示例
+
+不管内存是否充足，如果只有弱引用引用该对象，就会回收该对象
+
+```java
+// -Xmx20m
+public class d2_WeakReference {
+    public static void main(String[] args) {
+        // list -> WeakReference -> byte[]
+        List<WeakReference<byte[]>> list = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            WeakReference<byte[]> ref = new WeakReference<>(new byte[1024*1024*4]);
+            list.add(ref);
+            for (WeakReference<byte[]> weakReference : list) {
+                System.out.println(weakReference.get() + " ");
+            }
+            System.out.println();
+        }
+        System.out.println("循环结束：" + list.size());
+    }
+}
+```
+
+输出：在垃圾回收时会将弱引用对象回收：
+
+```java
+[B@10f87f48 
+
+[B@10f87f48 
+[B@1d81eb93 
+
+[B@10f87f48 
+[B@1d81eb93 
+[B@7291c18f 
+
+null 
+null 
+null 
+[B@34a245ab 
+
+null 
+null 
+null 
+null 
+null 
+
+循环结束：5
+```
+
+## 2.2 垃圾回收算法
+
+### 2.2.1  标记清除
+
+Mark Sweep
+
+记录垃圾对象的地址
+
+优点：速度快
+
+缺点：造成内存碎片，本可以存下的新对象因为内存分布的太分散而无法存下
+
+![image-20231223190346153](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312231903310.png)
+
+### 2.2.2 标记整理
+
+将所有存活的对象移动到一端，避免了内存碎片的产生，但是由于对象发生了移动，所以算法的速度慢
+
+- 速度慢
+- 没内存碎片
+
+![image-20231223190839788](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312231908855.png)
+
+### 2.2.3 复制
+
+ 把内存空间分为两部分。一部分内存空间用完了，就把存活的对象复制到另一部分的内存空间上面。然后把使用过的内存空间进行清理。
+
+- 不会产生碎片
+- 占用双倍的内存空间
+
+![image-20231223191124239](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312231911352.png)
+
+## 2.3 分代垃圾回收
+
+
+
+### 2.3.1 相关 VM 参数
+
+
+
+
+
 
 
 
