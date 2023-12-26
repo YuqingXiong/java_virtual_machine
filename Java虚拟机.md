@@ -1442,3 +1442,723 @@ SourceFile: "d1_HelloWorld.java"
 
 ### 3.2.3 图解方法执行流程
 
+#### 1）原始的 Java 代码
+
+```java
+package com.rainsun.d3_class_structure;
+/**
+ * 演示 字节码指令 和 操作数栈、常量池的关系
+ */
+public class d2_method_runflow {
+    public static void main(String[] args) {
+        int a = 10;
+        int b = Short.MAX_VALUE + 1;
+        int c = a + b;
+        System.out.println(c);
+    }
+}
+```
+
+#### 2）编译后的字节码文件
+
+```java
+ D:\CodeProject\Java\java_virtual_machine\target\classes\com\rainsun\d3_class_structure> javap -v .\d2_method_runflow.class
+Classfile /D:/CodeProject/Java/java_virtual_machine/target/classes/com/rainsun/d3_class_structure/d2_method_runflow.class
+  Last modified 2023年12月26日; size 675 bytes
+  SHA-256 checksum 090cee1c8efae1a0d3b54af310b799f33efc90463f218ea25bdb4cea5aef56ef
+  Compiled from "d2_method_runflow.java"
+public class com.rainsun.d3_class_structure.d2_method_runflow
+  minor version: 0
+  major version: 65
+  flags: (0x0021) ACC_PUBLIC, ACC_SUPER
+  this_class: #22                         // com/rainsun/d3_class_structure/d2_method_runflow
+  super_class: #2                         // java/lang/Object
+  interfaces: 0, fields: 0, methods: 2, attributes: 1
+Constant pool:
+   #1 = Methodref          #2.#3          // java/lang/Object."<init>":()V
+   #2 = Class              #4             // java/lang/Object
+   #3 = NameAndType        #5:#6          // "<init>":()V
+   #4 = Utf8               java/lang/Object
+   #5 = Utf8               <init>
+   #6 = Utf8               ()V
+   #7 = Class              #8             // java/lang/Short
+   #8 = Utf8               java/lang/Short
+   #9 = Integer            32768
+  #10 = Fieldref           #11.#12        // java/lang/System.out:Ljava/io/PrintStream;       
+  #11 = Class              #13            // java/lang/System
+  #12 = NameAndType        #14:#15        // out:Ljava/io/PrintStream;
+  #13 = Utf8               java/lang/System
+  #14 = Utf8               out
+  #15 = Utf8               Ljava/io/PrintStream;
+  #16 = Methodref          #17.#18        // java/io/PrintStream.println:(I)V
+  #17 = Class              #19            // java/io/PrintStream
+  #18 = NameAndType        #20:#21        // println:(I)V
+  #19 = Utf8               java/io/PrintStream
+  #20 = Utf8               println
+  #21 = Utf8               (I)V
+  #22 = Class              #23            // com/rainsun/d3_class_structure/d2_method_runflow 
+  #23 = Utf8               com/rainsun/d3_class_structure/d2_method_runflow
+  #24 = Utf8               Code
+  #25 = Utf8               LineNumberTable
+  #26 = Utf8               LocalVariableTable
+  #27 = Utf8               this
+  #28 = Utf8               Lcom/rainsun/d3_class_structure/d2_method_runflow;
+  #29 = Utf8               main
+  #30 = Utf8               ([Ljava/lang/String;)V
+  #31 = Utf8               args
+  #32 = Utf8               [Ljava/lang/String;
+  #33 = Utf8               a
+  #34 = Utf8               I
+  #35 = Utf8               b
+  #36 = Utf8               c
+  #37 = Utf8               SourceFile
+  #38 = Utf8               d2_method_runflow.java
+{
+  public com.rainsun.d3_class_structure.d2_method_runflow();
+    descriptor: ()V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokespecial #1                  // Method java/lang/Object."<init>":()V
+         4: return
+      LineNumberTable:
+        line 6: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lcom/rainsun/d3_class_structure/d2_method_runflow;        
+
+  public static void main(java.lang.String[]);
+    descriptor: ([Ljava/lang/String;)V
+    flags: (0x0009) ACC_PUBLIC, ACC_STATIC
+    Code:
+      stack=2, locals=4, args_size=1
+         0: bipush        10
+         2: istore_1
+         3: ldc           #9                  // int 32768
+         5: istore_2
+         6: iload_1
+         7: iload_2
+         8: iadd
+         9: istore_3
+        10: getstatic     #10                 // Field java/lang/System.out:Ljava/io/PrintStream;
+        13: iload_3
+        14: invokevirtual #16                 // Method java/io/PrintStream.println:(I)V      
+        17: return
+      LineNumberTable:
+        line 8: 0
+        line 9: 3
+        line 10: 6
+        line 11: 10
+        line 12: 17
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      18     0  args   [Ljava/lang/String;
+            3      15     1     a   I
+            6      12     2     b   I
+           10       8     3     c   I
+}
+SourceFile: "d2_method_runflow.java"
+```
+
+#### 3）常量池放入运行时常量池
+
+首先加载main方法所在的类，加载类需要将类中的常量池放入加载到运行时常量池
+
+![image-20231226104547181](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312261045258.png)
+
+#### 4）方法字节码载入方法区
+
+![image-20231226105131299](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312261051375.png)
+
+#### 5）main 线程开始运行，分配栈帧内存
+
+（stack=2，locals=4）
+
+绿色：局部变量表，有 4 个槽
+
+蓝绿色：操作数栈，深度为 2 
+
+![image-20231226105154146](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312261051211.png)
+
+#### 6）执行引擎开始执行字节码
+
+##### bipush 10
+
+- 将一个 byte 压入操作数栈（其长度会补齐 4 个字节），类似的指令还有
+- sipush 将一个 short 压入操作数栈（其长度会补齐 4 个字节）
+- ldc 将一个 int 压入操作数栈
+- ldc2_w 将一个 long 压入操作数栈（分两次压入，因为 long 是 8 个字节）
+- 这里小的数字都是和字节码指令存在一起，超过 short 范围的数字存入了常量池
+
+![image-20231226105240461](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312261052587.png)
+
+##### istore_1
+
+将操作数栈顶数据弹出，存入局部变量表的 slot 1
+
+![image-20231226105711881](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312261057021.png)
+
+![image-20231226105725011](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312261057149.png)
+
+##### ldc #3
+
+- 从常量池加载 #3 数据到操作数栈
+- 注意 Short.MAX_VALUE 是 32767，所以 32768 = Short.MAX_VALUE + 1 实际是在编译期间计算好的
+
+![image-20231226105800441](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312261058587.png)
+
+##### istore_2
+
+将操作数栈顶数据弹出，存入局部变量表的 slot 2
+
+![image-20231226105832397](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312261058472.png)
+
+##### iload_1
+
+加载 slot 1 中的数据到操作数栈
+
+![image-20231226105921951](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312261059114.png)
+
+##### iload_2
+
+![image-20231226105957795](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312261059937.png)
+
+##### iadd
+
+执行加法
+
+![image-20231226110031605](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312261100707.png)
+
+##### istore_3
+
+将栈顶的执行结果存入局部变量表的 slot 3
+
+![image-20231226110050072](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312261100276.png)
+
+##### getstatic #10
+
+getstatic获取一个成员变量的引用，将该对象加载到堆中，并将堆中的引用放入操作数栈
+
+![image-20231226110141704](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312261101844.png)
+
+![image-20231226110415448](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312261104579.png)
+
+##### iload_3
+
+将操作数变量表中的 slot 3 位置的变量放入操作数栈，传递给out对象
+
+![image-20231226110434514](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312261104965.png)
+
+##### invokevirtual #16
+
+调用println函数
+
+- 找到常量池 #5 项
+- 定位到方法区 java/io/PrintStream.println:(I)V 方法
+- 生成新的栈帧（分配 locals、stack等）
+- 传递参数，执行新栈帧中的字节码
+
+![image-20231226110707787](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312261107935.png)
+
+- 执行完毕，弹出栈帧
+- 清除 main 操作数栈内容
+
+![image-20231226111530302](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312261115367.png)
+
+##### return
+
+- 完成 main 方法调用，弹出 main 栈帧
+- 程序结束
+
+### 3.2.9 方法调用
+
+```java
+public class Demo3_9 {
+    public Demo3_9() { } 			// 构造方法
+    private void test1() { }		// 私有方法
+    private final void test2() { }	// final 方法
+    public void test3() { }			// 普通 public 成员方法
+    public static void test4() { }	// 静态方法
+    public static void main(String[] args) {
+    	Demo3_9 d = new Demo3_9();
+        d.test1();
+        d.test2();
+        d.test3();
+        d.test4();
+        Demo3_9.test4();
+    }
+}
+```
+
+字节码：
+
+```java
+0: new #2 // class cn/itcast/jvm/t3/bytecode/Demo3_9
+3: dup
+4: invokespecial #3 // Method "<init>":()V
+7: astore_1
+8: aload_1
+9: invokespecial #4 // Method test1:()V
+12: aload_1
+13: invokespecial #5 // Method test2:()V
+16: aload_1
+17: invokevirtual #6 // Method test3:()V
+20: aload_1
+21: pop
+22: invokestatic #7 // Method test4:()V
+25: invokestatic #7 // Method test4:()V
+28: return
+```
+
+`Demo3_9 d = new Demo3_9();`
+
+- new 是创建【对象】，给对象分配堆内存，执行成功会将【对象引用】压入操作数栈
+- dup 是赋值操作数栈栈顶的内容，本例即为【对象引用】，为什么需要两份引用呢，一个是要配合 invokespecial 调用该对象的构造方法 "`<init>`":()V （会消耗掉栈顶一个引用），另一个要配合 astore_1 赋值给局部变量
+
+`test1` `test2`
+
+最终方法（final），私有方法（private），构造方法都是由 invokespecial 指令来调用，属于静态绑定
+
+`test3`:
+
+普通成员方法是由 invokevirtual 调用，**属于动态绑定，即支持多态**
+
+成员方法与静态方法调用的另一个区别是，执行方法前是否需要【对象引用】
+
+比较有意思的是 d.test4(); 是通过【对象引用】调用一个静态方法，可以看到在调用 invokestatic 之前执行了 pop 指令，把【对象引用】从操作数栈弹掉了
+
+还有一个执行 invokespecial 的情况是通过 super 调用父类方法
+
+### 3.2.10 多态的实现原理
+
+（HSDB工具的使用）
+
+对象的内存结构是由基础的16字节加上存储属性所花费的字节组成的
+
+16字节中，前8字节为 MarkWord 用于计算类的 hashcode，后 8 字节为对象的Class指针
+
+查看该对象的 class 指针指向的内存地址，可以找到其中关联一个 vtable（虚函数表），里面存储着虚方法。从 Class 的起始地址开始算，偏移 0x1b8 就是 vtable 的起始地址
+
+通过 Tools -> Class Browser 查看每个类的方法定义，比较可知
+
+```java
+Dog - public void eat() @0x000000001b7d3fa8
+Animal - public java.lang.String toString() @0x000000001b7d35e8;
+Object - protected void finalize() @0x000000001b3d1b10;
+Object - public boolean equals(java.lang.Object) @0x000000001b3d15e8;
+Object - public native int hashCode() @0x000000001b3d1540;
+Object - protected native java.lang.Object clone() @0x000000001b3d1678;
+```
+
+- eat() 方法是 Dog 类自己的
+- toString() 方法是继承 String 类的
+- finalize() ，equals()，hashCode()，clone() 都是继承 Object 类的
+
+当执行 invokevirtual 指令时，
+1. 先通过栈帧中的对象引用找到对象
+2. 分析对象头，找到对象的实际 Class
+3. Class 结构中有 vtable，**它在类加载的链接阶段就已经根据方法的重写规则生成好了**
+4. 查表得到方法的具体地址
+5. 执行方法的字节码
+
+### 3.2.11 异常处理
+
+**try catch 原理：**
+
+![image-20231226151814103](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312261518254.png)
+
+- 可以看到多出来一个 Exception table 的结构，[from, to) 是前闭后开的检测范围，一旦这个范围内的字节码执行出现异常，则通过 type 匹配异常类型，如果一致，进入 target 所指示行号
+- 8 行的字节码指令 astore_2 是将异常对象引用存入局部变量表的 slot 2 位置
+
+**多个 single-catch 块的情况：**
+
+因为异常出现时，只能进入 Exception table 中一个分支，所以局部变量表 slot 2 位置被共用
+
+监听[2, 5)之间的字节码，如果出现了异常就转到对应的 target 行进行处理
+
+![image-20231226151915151](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312261519319.png)
+
+**multi-catch 的情况**
+
+![image-20231226152116152](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312261521199.png)
+
+catch 多个不同类型的异常，那么 target 跳转的行就会相同
+
+![image-20231226152100958](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312261521175.png)
+
+**finally原理：**
+
+finally 中的代码被复制了 3 份，分别放入 try 流程，catch 流程以及 catch 剩余的异常类型流程
+
+- 在没有异常会在try后执行finally中的代码
+- 捕获了异常的时候就catch执行后执行finally中的代码
+- 在出现了异常但是和异常类型不匹配时，也就是没有捕获成功时
+  - 由于JVM增加了一个异常检测，还会检测 catch 是否出现了异常
+  - 这时如果 catch中没有捕获异常或者出现了新的异常就会跳转到 finally字节码的地方执行。
+
+![image-20231226151640515](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312261516605.png)
+
+#### finally 的面试题
+
+finally 出现了 return
+
+```java
+public class Demo3_12_2 {
+    public static void main(String[] args) {
+        int result = test();
+        System.out.println(result);
+    }
+    public static int test() {
+        try {
+            return 10;
+        } finally {
+            return 20;
+        }
+    }
+}
+```
+
+字节码的角度分析：
+
+```java
+public static int test();
+    descriptor: ()I
+    flags: ACC_PUBLIC, ACC_STATIC
+    Code:
+        stack=1, locals=2, args_size=0
+        0: bipush 10 // <- 10 放入栈顶
+        2: istore_0 // 10 -> slot 0 (从栈顶移除了)
+        3: bipush 20 // <- 20 放入栈顶
+        5: ireturn // 返回栈顶 int(20)
+        6: astore_1 // catch any -> slot 1
+        7: bipush 20 // <- 20 放入栈顶
+        9: ireturn // 返回栈顶 int(20)
+    Exception table:
+        from to target type
+           0  3     6   any
+    LineNumberTable: ...
+    StackMapTable: ...
+```
+
+因为 finally 块中的代码被插入了所有可能的流程（当然包括 try 流程）。所以在try 中代码执行后，执行了 finally 中的代码，由于最后执行的 finally 代码，finally 中的 20 被放入栈顶了，最后 return 就是栈顶的 20。
+
+这也说明了 finally 的代码是在 return 前插入的
+
+- 由于 finally 中的 ireturn 被插入了所有可能的流程，因此返回结果肯定以 finally 的为准
+- 至于字节码中第 2 行，似乎没啥用，且留个伏笔，看下个例子
+- 跟上例中的 finally 相比，发现没有 athrow 了，这告诉我们：
+  - 如果在 finally 中出现了 return，会吞掉异常😱😱😱，可以试一下下面的代码。1/0不会抛出异常，只返回了一个 20
+
+```java
+public class Demo3_12_1 {
+    public static void main(String[] args) {
+        int result = test();
+        System.out.println(result);//20
+    }
+    public static int test() {
+        try {
+            int i = 1/0; 
+        	return 10;
+        } finally {
+        	return 20;
+        }
+    }
+}
+```
+
+**finally 对返回值影响**
+
+```java
+public class Demo3_12_2 {
+    public static void main(String[] args) {
+        int result = test();
+        System.out.println(result); // 10
+    }
+    public static int test() {
+        int i = 10;
+        try {
+            return i;
+        } finally {
+            i = 20;
+        }
+    }
+}
+```
+
+字节码：
+
+```java
+ public static int test();
+    descriptor: ()I
+    flags: (0x0009) ACC_PUBLIC, ACC_STATIC
+    Code:
+      stack=1, locals=3, args_size=0
+         0: bipush        10 // <-10放入栈顶
+         2: istore_0		// 10-> slot 0
+         3: iload_0			// <- slot 0 的10加载到栈顶
+         4: istore_1		// 栈顶10暂存到 solt 1，目的是为了固定返回值
+         5: bipush        20  // 20 放入栈顶
+         7: istore_0		// 20 放入solt 0
+         8: iload_1			// solt 1 里的 10	加载到栈顶
+         9: ireturn			// 返回栈顶的 10
+        10: astore_2
+        11: bipush        20
+        13: istore_0
+        14: aload_2
+        15: athrow
+      Exception table:
+         from    to  target type
+             3     5    10   any
+      LineNumberTable:
+        line 9: 0
+        line 11: 3
+        line 13: 5
+        line 11: 8
+        line 13: 10
+        line 14: 14
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            3      13     0     i   I
+      StackMapTable: number_of_entries = 1
+        frame_type = 255 /* full_frame */
+          offset_delta = 10
+          locals = [ int ]
+          stack = [ class java/lang/Throwable ]
+}
+```
+
+如果 finally 中没有 return，对返回值的修改是没有影响的，因为在return前会对返回值进行暂存
+
+同时由于 finally 中没有 return 抛出异常的 athrow 也不会被吞掉
+
+#### synchronized
+
+```java
+public class Demo3_13 {
+    public static void main(String[] args) {
+        Object lock = new Object();
+        synchronized (lock) {
+        	System.out.println("ok");
+        }
+    }
+}
+```
+
+monitorenter 指令对对象进行加锁
+
+monitorexit 指令对对象进行解锁，在正常执行和异常处理的部分都会放置一份，确保即使出现异常也可以解锁成功
+
+![image-20231226155242490](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312261552696.png)
+
+## 3.3 编译期处理
+
+所谓的 语法糖，其实就是指 java 编译器把 *.java 源码编译为 *.class 字节码的过程中，自动生成和转换的一些代码
+
+编译器转换的结果直接就是 class 字节码，只是为了便于阅读，这里给出了 几乎等价 的 java 源码方式，
+
+原本的源码->优化->源码优化后生成的字节码->反编译生成优化后的源码
+
+### 3.3.1 默认构造器
+
+```java
+public class Candy1 {
+}
+
+//编译成class后的代码：
+public class Candy1 {
+    // 这个无参构造是编译器帮助我们加上的
+    public Candy1() {
+    	super(); // 即调用父类 Object 的无参构造方法，即调用 java/lang/Object." <init>":()V
+    }
+}
+```
+
+### 3.3.2 自动拆装箱
+
+从JDK 5开始：
+
+之前版本的代码太麻烦了，需要在基本类型和包装类型之间来回转换（尤其是集合类中操作的都是包装类型），因此这些转换的事情在 JDK 5 以后都由编译器在编译阶段完成。即 代码片段1 都会在编译阶段被转换为 代码片段2
+
+```java
+//1:
+public class Candy2 {
+    public static void main(String[] args) {
+        Integer x = 1;
+        int y = x;
+    }
+}
+
+// 2:
+public class Candy2 {
+    public static void main(String[] args) {
+        Integer x = Integer.valueOf(1);
+        int y = x.intValue;
+    }
+}
+```
+
+### 3.3.3 泛型集合取值
+
+泛型也是在 JDK 5 开始加入的特性，但 java 在编译泛型代码后会执行 泛型擦除 的动作，即泛型信息在编译为字节码之后就丢失了，实际的类型都当做了 Object 类型来处理：
+
+```java
+public class Candy3 {
+    public static void main(String[] args) {
+        List<Integer> list = new ArrayList<>();
+        list.add(10); // 实际调用的是 List.add(Object e)
+        Integer x = list.get(0); // 实际调用的是 Object obj = List.get(int index);
+    }
+}
+```
+
+擦除的是字节码上的泛型信息，可以看到 LocalVariableTypeTable 仍然保留了方法参数泛型的信息
+
+使用反射，仍然能够获得这些信息：
+
+```java
+public Set<Integer> test(List<String> list, Map<Integer, Object> map) {
+}
+```
+
+```java
+Method test = Candy3.class.getMethod("test", List.class, Map.class);
+Type[] types = test.getGenericParameterTypes();
+for (Type type : types) {
+    if (type instanceof ParameterizedType) {
+        ParameterizedType parameterizedType = (ParameterizedType) type;
+        System.out.println("原始类型 - " + parameterizedType.getRawType());
+        Type[] arguments = parameterizedType.getActualTypeArguments();
+        for (int i = 0; i < arguments.length; i++) {
+        	System.out.printf("泛型参数[%d] - %s\n", i, arguments[i]);
+        }
+    }
+}
+```
+
+输出：
+
+```java
+原始类型 - interface java.util.List
+泛型参数[0] - class java.lang.String
+原始类型 - interface java.util.Map
+泛型参数[0] - class java.lang.Integer
+泛型参数[1] - class java.lang.Object
+```
+
+#### 可变参数，foreach,switch,枚举...
+
+#### 方法重写时的桥接方法
+
+方法重写时对返回值分两种情况：
+
+- 父子类的返回值完全一致
+- 子类返回值可以是父类返回值的子类（比较绕口，见下面的例子）
+
+```java
+class A {
+    public Number m() {
+    	return 1;
+    }
+}
+class B extends A {
+    @Override
+    // 子类 m 方法的返回值是 Integer 是父类 m 方法返回值 Number 的子类
+    public Integer m() {
+        return 2;
+    }
+}
+```
+
+对于子类，java 编译器会做如下处理：
+
+```java
+class B extends A {
+    public Integer m() {
+        return 2;
+    }
+    // 此方法才是真正重写了父类 public Number m() 方法
+    public synthetic bridge Number m() {
+        // 调用 public Integer m()
+        return m();
+    }
+}
+```
+
+其中桥接方法比较特殊，仅对 java 虚拟机可见，并且与原来的 public Integer m() 没有命名冲突，
+
+#### 匿名内部类
+
+```java
+// 源代码：
+public class Candy11 {
+    public static void main(String[] args) {
+        Runnable runnable = new Runnable() {
+            @Override
+            public void run() {
+            	System.out.println("ok");
+        	}
+        };
+    }
+}
+
+// 转换后：额外生成的类
+final class Candy11$1 implements Runnable {
+    Candy11$1() {
+    }
+    public void run() {
+        System.out.println("ok");
+    }
+}
+public class Candy11 {
+    public static void main(String[] args) {
+        Runnable runnable = new Candy11$1();
+    }
+}
+```
+
+引用局部变量的匿名内部类，源代码：
+
+```java
+public class Candy11 {
+    public static void test(final int x) {
+        Runnable runnable = new Runnable() {
+            @Override
+            public void run() {
+                System.out.println("ok:" + x);
+            }
+        };
+    }
+}
+```
+
+转换后代码：
+
+```java
+// 额外生成的类
+final class Candy11$1 implements Runnable {
+    int val$x; // 外部的局部变量变成了类的成员变量，无法感知外部的变化，所以引用的外部变量必须是 final 的
+    Candy11$1(int x) {
+        this.val$x = x;
+    }
+    public void run() {
+        System.out.println("ok:" + this.val$x);
+    }
+}
+
+public class Candy11 {
+    public static void test(final int x) {
+        Runnable runnable = new Candy11$1(x);
+    }
+}
+```
+
+这同时解释了为什么匿名内部类引用局部变量时，局部变量必须是 final 的：因为在创建
+`Candy11$1` 对象时，将 x 的值赋值给了 `Candy11$1` 对象的 `val$x` 属性，所以 x 不应该再发生变化了，如果变化，那么 `val$x` 属性没有机会再跟着一起变化
+
+
+
+
+
+
+
