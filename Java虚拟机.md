@@ -1122,5 +1122,323 @@ Sets the initial and maximum size (in bytes) of the heap for the young generatio
 ### 2.5.6 案例
 
 - 案例1 Full GC 和 Minor GC频繁
+  - 新生代内存太小，创建的对象生成周期短，但因新生代内存下而晋升到老年代
+  - 可以调大新生代内存，同时调大晋升阈值
 - 案例2 请求高峰期发生 Full GC，单次暂停时间特别长 （CMS）
+  - 重新标记时会扫描所有对象，耗时太多
+  - 设置`-XX:+CMSScavengeBeforeRemark` ：重新标记前回收一遍新生代的垃圾
 - 案例3 老年代充裕情况下，发生 Full GC （CMS jdk1.7）
+  - 1.7 永久代内存空间不足也会导致Full GC
+  - 1.7 方法区存放在永久代，可以增大方法区的内存
+
+# 3 类加载与字节码技术
+
+## 3.1 类文件结构
+
+1. 类文件结构
+2. 字节码指令
+3. 编译期处理
+4. 类加载阶段
+5. 类加载器
+6. 运行期优化
+
+![image-20231225163130177](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312251631270.png)
+
+根据 JVM 规范，类文件结构如下
+
+```java
+ClassFile {
+    u4 magic;
+    u2 minor_version; // 小版本号
+    u2 major_version; // 主版本号
+    u2 constant_pool_count; // 常量池
+    cp_info constant_pool[constant_pool_count-1];
+    u2 access_flags; // 访问修饰 public project private 
+    u2 this_class; // 包名 类名
+    u2 super_class; // 父类信息
+    u2 interfaces_count; // 接口信息
+    u2 interfaces[interfaces_count];
+    u2 fields_count; //类中的成员变量，静态变量
+    field_info fields[fields_count];
+    u2 methods_count; // 类中成员方法，静态方法
+    method_info methods[methods_count];
+    u2 attributes_count; // 附加的属性信息
+    attribute_info attributes[attributes_count];
+}
+```
+
+### 3.1.1 魔数
+
+ 0~3 字节，表示它是否是【class】类型的文件
+
+0000000 **ca fe ba be** 00 00 00 34 00 23 0a 00 06 00 15 09
+
+（咖啡宝贝？:）
+
+### 3.1.2 版本
+
+![image-20231225170801251](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312251708374.png)
+
+4~7 字节，表示类的版本 00 34（52） 表示是 Java 8
+0000000 ca fe ba be 00 00 00 34 00 23 0a 00 06 00 15 09
+
+### 3.1.3 常量池
+
+8-9字节表示常量池的长度（constant_pool_count）
+
+00 23 (35）表示常量池有 #1~#34项，#0项不计入，也没有值；
+
+第一个字节表示常量类型，一共有 17 种类型：每种类型有着完全独立的数据结构
+
+![image-20231226100637687](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312261006940.png)
+
+
+
+第#1项 0a 表示一个 Method 信息，00 06 和 00 15（21） 表示它引用了常量池中 #6 和 #21 项来获得这个方法的【所属类】和【方法名】
+
+0000000 ca fe ba be 00 00 00 34 00 23 **0a 00 06 00 15** 09
+
+
+
+第#2项 09 表示一个 Field 信息，00 16（22）和 00 17（23） 表示它引用了常量池中 #22 和 # 23 项来获得这个成员变量的【所属类】和【成员变量名】
+
+0000000 ca fe ba be 00 00 00 34 00 23 0a 00 06 00 15 09
+
+0000020 **00 16 00 17** 08 00 18 0a 00 19 00 1a 07 00 1b 07
+
+
+
+第#6项 07 表示一个 Class 信息，00 1c（28） 表示它引用了常量池中 #28 项
+
+0000020 00 16 00 17 08 00 18 0a 00 19 00 1a 07 00 1b **07**
+
+0000040 **00 1c** 01 00 06 3c 69 6e 69 74 3e 01 00 03 28 29
+
+
+
+第#7项 01 表示一个 utf8 串，00 06 表示长度，3c 69 6e 69 74 3e 是【`<init> `】表示构造方法
+
+0000040 00 1c **01 00 06 3c 69 6e 69 74 3e** 01 00 03 28 29
+
+
+
+第#8项 01 表示一个 utf8 串，00 03 表示长度，28 29 56 是【()V】其实就是表示无参、无返回值
+
+0000040 00 1c 01 00 06 3c 69 6e 69 74 3e **01 00 03 28 29**
+
+0000060 **56** 01 00 04 43 6f 64 65 01 00 0f 4c 69 6e 65 4e
+
+
+
+第#21项 0c 表示一个 【名+类型】，00 07 00 08 引用了常量池中 #7 #8 两项
+
+0000360 2e 6a 61 76 61 **0c 00 07 00 08** 07 00 1d 0c 00 1e
+
+
+
+第#22项 07 表示一个 Class 信息，00 1d（29） 引用了常量池中 #29 项
+
+0000360 2e 6a 61 76 61 0c 00 07 00 08 **07 00 1d** 0c 00 1e
+
+
+
+第#23项 0c 表示一个 【名+类型】，00 1e（30） 00 1f （31）引用了常量池中 #30 #31 两项
+0000360 2e 6a 61 76 61 0c 00 07 00 08 07 00 1d **0c 00 1e**
+0000400 **00 1f** 01 00 0b 68 65 6c 6c 6f 20 77 6f 72 6c 64
+
+
+
+第#28项 01 表示一个 utf8 串，00 10（16） 表示长度，是【java/lang/Object】
+
+0000460 6f 57 6f 72 6c 64 **01** **00 10 6a 61 76 61 2f 6c 61**
+
+0000500 **6e 67 2f 4f 62 6a 65 63 74** 01 00 10 6a 61 76 61
+
+
+
+第#29项 01 表示一个 utf8 串，00 10（16） 表示长度，是【java/lang/System】
+
+0000500 6e 67 2f 4f 62 6a 65 63 74 **01 00 10 6a 61 76 61**
+
+0000520 **2f 6c 61 6e 67 2f 53 79 73 74 65 6d** 01 00 03 6f
+
+
+
+第#30项 01 表示一个 utf8 串，00 03 表示长度，是【out】
+0000520 2f 6c 61 6e 67 2f 53 79 73 74 65 6d **01 00 03 6f**
+0000540 75 74 01 00 15 4c 6a 61 76 61 2f 69 6f 2f 50 72
+
+
+
+第#31项 01 表示一个 utf8 串，00 15（21） 表示长度，是【Ljava/io/PrintStream;】
+0000540 75 74 **01 00 15 4c 6a 61 76 61 2f 69 6f 2f 50 72**
+0000560 **69 6e 74 53 74 72 65 61 6d 3b** 01 00 13 6a 61 76
+
+### 3.1.4 访问标识与继承信息
+
+![image-20231226101652491](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312261016557.png)
+
+21 表示该 class 是一个类，公共的
+0000660 29 56 **00 21** 00 05 00 06 00 00 00 00 00 02 00 01
+05 表示根据常量池中 #5 找到本类全限定名
+0000660 29 56 00 21 **00 05** 00 06 00 00 00 00 00 02 00 01
+06 表示根据常量池中 #6 找到父类全限定名
+0000660 29 56 00 21 00 05 **00 06** 00 00 00 00 00 02 00 01
+表示接口的数量，本类为 0
+0000660 29 56 00 21 00 05 00 06 **00 00** 00 00 00 02 00 01
+
+### 3.1.5 Field 信息用于表示成员变量
+
+表示成员变量数量，本类为 0
+0000660 29 56 00 21 00 05 00 06 00 00 **00 00** 00 02 00 01
+
+字节码中表示类型信息的方法
+
+![image-20231226101827740](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312261018948.png)
+
+### 3.1.6 Method 信息
+
+表示方法数量，本类为 2
+0000660 29 56 00 21 00 05 00 06 00 00 00 00 **00 02** 00 01
+
+一个方法由 访问修饰符，名称，参数描述，方法属性数量，方法属性组成
+
+- 红色代表访问修饰符（本类中是 public）
+- 蓝色代表引用了常量池 #07 项作为方法名称
+- 绿色代表引用了常量池 #08 项作为方法参数描述
+- 黄色代表方法属性数量，本方法是 1
+- 红色代表方法属性
+  - 00 09 表示引用了常量池 #09 项，发现是【Code】属性
+  - 00 00 00 2f 表示此属性的长度是 47
+  - 00 01 表示【操作数栈】最大深度
+  - 00 01 表示【局部变量表】最大槽（slot）数
+  - 00 00 00 05 表示字节码长度，本例是 5
+  - 2a b7 00 01 b1 是字节码指令
+  - 00 00 00 02 表示方法细节属性数量，本例是 2
+  - 00 0a 表示引用了常量池 #10 项，发现是【LineNumberTable】属性
+    - 00 00 00 06 表示此属性的总长度，本例是 6
+    - 00 01 表示【LineNumberTable】长度
+    - 00 00 表示【字节码】行号 00 04 表示【java 源码】行号
+  - 00 0b 表示引用了常量池 #11 项，发现是【LocalVariableTable】属性
+    - 00 00 00 0c 表示此属性的总长度，本例是 12
+    - 00 01 表示【LocalVariableTable】长度
+    - 00 00 表示局部变量生命周期开始，相对于字节码的偏移量
+    - 00 05 表示局部变量覆盖的范围长度
+    - 00 0c 表示局部变量名称，本例引用了常量池 #12 项，是【this】
+    - 00 0d 表示局部变量的类型，本例引用了常量池 #13 项，是【Lcn/itcast/jvm/t5/HelloWorld;】
+    - 00 00 表示局部变量占有的槽位（slot）编号，本例是 0
+
+![image-20231226102243959](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312261022103.png)
+
+### 3.1.7 附加属性
+
+00 01 表示附加属性数量
+00 13 表示引用了常量池 #19 项，即【SourceFile】
+00 00 00 02 表示此属性的长度
+00 14 表示引用了常量池 #20 项，即【HelloWorld.java】
+
+0001100 00 12 00 00 00 05 01 00 10 00 00 **00 01 00 13 00**
+0001120 **00 00 02 00 14**
+
+### 参考文献
+https://docs.oracle.com/javase/specs/jvms/se8/html/jvms-4.html
+
+## 3.2 字节码指令
+
+### 3.2.1 入门
+
+public cn.itcast.jvm.t5.HelloWorld(); 构造方法的字节码指令
+
+```java
+2a b7 00 01 b1
+```
+
+1. 2a => aload_0 加载 slot 0 的局部变量，即 this，做为下面的 invokespecial 构造方法调用的参数
+2. b7 => invokespecial 预备调用构造方法，哪个方法呢？
+3. 00 01 引用常量池中 #1 项，即【Method java/lang/Object."<init>":()V 】
+4. b1 表示返回
+
+
+
+另一个是 public static void main(java.lang.String[]); 主方法的字节码指令
+
+```java
+b2 00 02 12 03 b6 00 04 b1
+```
+
+1. b2 => getstatic 用来加载静态变量，哪个静态变量呢？
+2. 00 02 引用常量池中 #2 项，即【Field java/lang/System.out:Ljava/io/PrintStream;】
+3. 12 => ldc 加载参数，哪个参数呢？
+4. 03 引用常量池中 #3 项，即 【String hello world】
+5. b6 => invokevirtual 预备调用成员方法，哪个方法呢？
+6. 00 04 引用常量池中 #4 项，即【Method java/io/PrintStream.println:(Ljava/lang/String;)V】
+7. b1 表示返回
+
+### 3.2.2 javap 工具反编译字节码文件
+
+自己分析类文件结构太麻烦了，Oracle 提供了 javap 工具来反编译 class 文件：
+
+`javap -v class文件路径`
+
+```java
+D:\CodeProject\Java\java_virtual_machine\target\classes\com\rainsun\d3_class_structure> javap -v .\d1_HelloWorld.class
+Classfile /D:/CodeProject/Java/java_virtual_machine/target/classes/com/rainsun/d3_class_structure/d1_HelloWorld.class
+  Last modified 2023年12月25日; size 604 bytes
+  SHA-256 checksum f4c26de1e0291f2f0984d894624592a6287a89c87805cc57f0b2e658b5a796c7
+  Compiled from "d1_HelloWorld.java"
+public class com.rainsun.d3_class_structure.d1_HelloWorld
+  minor version: 0
+  major version: 65
+  flags: (0x0021) ACC_PUBLIC, ACC_SUPER
+  this_class: #21                         // com/rainsun/d3_class_structure/d1_HelloWorld
+  super_class: #2                         // java/lang/Object
+  interfaces: 0, fields: 0, methods: 2, attributes: 1
+Constant pool:
+   #1 = Methodref          #2.#3          // java/lang/Object."<init>":()V
+   #2 = Class              #4             // java/lang/Object
+   #3 = NameAndType        #5:#6          // "<init>":()V
+   #4 = Utf8               java/lang/Object
+   #5 = Utf8               <init>
+   #6 = Utf8               ()V
+   #7 = Fieldref           #8.#9          // java/lang/System.out:Ljava/io/PrintStream;
+   #8 = Class              #10            // java/lang/System
+   #9 = NameAndType        #11:#12        // out:Ljava/io/PrintStream;
+  #10 = Utf8               java/lang/System
+  #11 = Utf8               out
+  #12 = Utf8               Ljava/io/PrintStream;
+  #13 = String             #14            // hello world
+  #14 = Utf8               hello world
+  #15 = Methodref          #16.#17        // java/io/PrintStream.println:(Ljava/lang/String;)V
+  #16 = Class              #18            // java/io/PrintStream
+  #17 = NameAndType        #19:#20        // println:(Ljava/lang/String;)V
+  #18 = Utf8               java/io/PrintStream
+  #19 = Utf8               println
+  #20 = Utf8               (Ljava/lang/String;)V
+  #21 = Class              #22            // com/rainsun/d3_class_structure/d1_HelloWorld
+  #22 = Utf8               com/rainsun/d3_class_structure/d1_HelloWorld
+  #23 = Utf8               Code
+  #24 = Utf8               LineNumberTable
+  #25 = Utf8               LocalVariableTable
+  #26 = Utf8               this
+  #27 = Utf8               Lcom/rainsun/d3_class_structure/d1_HelloWorld;
+  #28 = Utf8               main
+  #29 = Utf8               ([Ljava/lang/String;)V
+  #30 = Utf8               args
+  #31 = Utf8               [Ljava/lang/String;
+  #32 = Utf8               SourceFile
+  #33 = Utf8               d1_HelloWorld.java
+{
+  public com.rainsun.d3_class_structure.d1_HelloWorld();
+    descriptor: ()V
+      LineNumberTable:
+        line 5: 0
+        line 6: 8
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       9     0  args   [Ljava/lang/String;
+}
+SourceFile: "d1_HelloWorld.java"
+```
+
+### 3.2.3 图解方法执行流程
+
