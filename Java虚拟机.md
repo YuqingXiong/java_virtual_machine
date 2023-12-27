@@ -2271,3 +2271,167 @@ class Singleton{
 
 - 调用 getInstance 时候才会去初始化 LazyHolder 这个类，且只会初始化一次，并保证了线程安全，保证了实例只被创建一次
 - 由于类初始化是懒惰的，只有在用到这个类的静态变量或者方法的时候才会初始化。避免了加载阶段就创建了实例
+
+## 3.5 类加载器
+
+JVM有不同层级的类加载器，加载不同类型的类，JDK 8 为例：
+
+![image-20231227100742151](https://xiongyuqing-img.oss-cn-qingdao.aliyuncs.com/img/202312271007374.png)
+
+启动类加载器->扩展类加载器->应用程序加载器
+
+如果上级类加载器都没有加载，下级才可以加载
+
+### 3.5.1 启动类加载器
+
+加载JAVA_HOME/jre/lib 目录下的类
+
+可以使用 `java -Xbootclasspath:<new bootclasspath>` 追加路径，交给启动类加载器加载
+
+- -Xbootclasspath 表示设置 bootclasspath
+- 其中 /a:. 表示将当前目录追加至 bootclasspath 之后
+- 可以用这个办法替换核心类
+  - java -Xbootclasspath:`<new bootclasspath>`
+  - java -Xbootclasspath/a:<追加路径>
+  - java -Xbootclasspath/p:<追加路径>
+
+#### 3.5.2 扩展类加载器
+
+加载 JAVA_HOME/jre/ext 目录下的类
+
+它的类加载器是 `sun.misc.Launcher$ExtClassLoader` 
+
+### 3.5.3 双亲委派模式
+
+所谓双亲委派就是指调用类加载器的loadClass方法时，查找类的规则：首先委派上级优先进行类的加载，上级没有这个类才有本级进行加载
+
+```java
+protected Class<?> loadClass(String name, boolean resolve)
+    throws ClassNotFoundException
+{
+    synchronized (getClassLoadingLock(name)) {
+        // First, check if the class has already been loaded
+        // 1. 检查该类是否已经加载
+        Class<?> c = findLoadedClass(name);
+        if (c == null) {
+            long t0 = System.nanoTime();
+            try {
+                if (parent != null) {
+                    // 2. 有上级的话，委派上级进行 loadClass
+                    c = parent.loadClass(name, false);
+                } else {
+                    // 3. 没有上级了，说明当前类加载器是 ExtClassLoader，则委派 BootstrapClassLoader
+                    c = findBootstrapClassOrNull(name);
+                }
+            } catch (ClassNotFoundException e) {
+                // ClassNotFoundException thrown if class not found
+                // from the non-null parent class loader
+            }
+
+            if (c == null) {
+                // If still not found, then invoke findClass in order
+                // to find the class.
+                long t1 = System.nanoTime();
+                // 4. 如果上一层找不到，则调用 findClass方法在本层寻找
+                c = findClass(name);
+
+                // this is the defining class loader; record the stats
+                PerfCounter.getParentDelegationTime().addTime(t1 - t0);
+                PerfCounter.getFindClassTime().addElapsedTimeFrom(t1);
+                PerfCounter.getFindClasses().increment();
+            }
+        }
+        if (resolve) {
+            resolveClass(c);
+        }
+        return c;
+    }
+}
+```
+
+```java
+public class d5_classLoad {
+    public static void main(String[] args) throws ClassNotFoundException {
+        System.out.println(d5_classLoad.class.getClassLoader());
+        Class<?> aClass = d5_classLoad.class.getClassLoader().loadClass("com.rainsun.d3_class_structure.H");
+        System.out.println(aClass.getClassLoader());
+    }
+}
+```
+
+执行流程为：
+1. `sun.misc.Launcher$AppClassLoader` //1 处， 开始查看已加载的类，结果没有
+2. `sun.misc.Launcher$AppClassLoader` // 2 处，委派上级
+`sun.misc.Launcher$ExtClassLoader.loadClass()`
+3. `sun.misc.Launcher$ExtClassLoader` // 1 处，查看已加载的类，结果没有
+4. `sun.misc.Launcher$ExtClassLoader` // 3 处，没有上级了，则委派 `BootstrapClassLoader`查找
+5. `BootstrapClassLoader` 是在 JAVA_HOME/jre/lib 下找 H 这个类，显然没有
+6. `sun.misc.Launcher$ExtClassLoader` // 4 处，调用自己的 `findClass` 方法，是在
+JAVA_HOME/jre/lib/ext 下找 H 这个类，显然没有，回到 `sun.misc.Launcher$AppClassLoader`的 // 2 处
+7. 继续执行到 `sun.misc.Launcher$AppClassLoader` // 4 处，调用它自己的 findClass 方法，在 classpath 下查找，找到了
+
+### 3.5.4 线程上下文类加载器
+
+线程上下文类加载器（Thread Context ClassLoader）。这个类加载器可以通过java.lang.Thread类的setContext-ClassLoader()方法进行设置，如果创建线程时还未设置，它将会从父线程中继承一个，如果在应用程序的全局范围内都没有设置过的话，那这个类加载器默认就是应用程序类加载器。
+
+### 3.5.5 自定义类加载器
+
+什么时候需要自定义类加载器
+1）想加载非 classpath 随意路径中的类文件
+2）都是通过接口来使用实现，希望解耦时，常用在框架设计
+3）这些类希望予以隔离，不同应用的同名类都可以加载，不冲突，常见于 tomcat 容器
+
+步骤：
+1. 继承 ClassLoader 父类
+2. 要遵从双亲委派机制，重写 findClass 方法
+注意不是重写 loadClass 方法，否则不会走双亲委派机制
+3. 读取类文件的字节码
+4. 调用父类的 defineClass 方法来加载类
+5. 使用者调用该类加载器的 loadClass 方法
+
+```java
+package com.rainsun.d3_class_structure;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+public class d6_classLoader {
+    public static void main(String[] args) throws ClassNotFoundException, InstantiationException, IllegalAccessException {
+        MyClassLoader classLoader = new MyClassLoader();
+        Class<?> aClass = classLoader.loadClass("H");
+        Class<?> aClass1 = classLoader.loadClass("H");
+        System.out.println(aClass1 == aClass1); // true
+
+        aClass1.newInstance(); // 初始化了类，执行了static 代码块的语句：H init
+
+    }
+}
+
+class MyClassLoader extends ClassLoader{
+    @Override
+    protected Class<?> findClass(String name) throws ClassNotFoundException {
+        String path = "D:\\CodeProject\\Java\\"+ name + ".class";
+        try {
+            ByteArrayOutputStream os = new ByteArrayOutputStream();
+            Files.copy(Paths.get(path), os);
+            // 得到字节数组
+            byte[] bytes = os.toByteArray();
+
+            // 字节数据 -> *.class
+            return defineClass(name, bytes, 0, bytes.length);
+        } catch (IOException e) {
+            e.printStackTrace();
+            throw new ClassNotFoundException("类文件未找到", e);
+        }
+    }
+}
+```
+
+
+
+
+
